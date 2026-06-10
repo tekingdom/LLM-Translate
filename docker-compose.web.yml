@@ -1,0 +1,22 @@
+# ใช้ project name เดียวกับ docker-compose.yml — container อยู่ระดับเดียวกับ postgres
+# ไม่สร้าง stack ย่อยชื่อ llm-translate แยกจาก service
+name: llm_translate
+
+services:
+  llm_translate_web:
+    build: .
+    image: llm_translate_web:latest
+    container_name: llm_translate_web
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      # ค่าอ่านจาก .env — entrypoint จะแปลง localhost → host.docker.internal อัตโนมัติ
+      DATABASE_URL: ${DATABASE_URL}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

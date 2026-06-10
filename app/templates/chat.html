@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ conversation.title or 'แชท' }} — LLM Translate{% endblock %}
+{% block main_class %}container container--chat{% endblock %}
+{% block content %}
+<header class="chat-header">
+    <h1>{{ conversation.title or 'สนทนาแปลภาษา' }}</h1>
+    <span class="lang-badge">{{ conversation.default_source_lang or 'zh' }} → {{ conversation.default_target_lang or 'en' }}</span>
+</header>
+
+<div id="messages" class="messages">
+    {% include "partials/messages.html" %}
+</div>
+
+<form
+    id="chat-form"
+    class="chat-form"
+    data-conversation-id="{{ conversation.id }}"
+>
+    <div class="chat-form-row">
+        <div class="lang-selectors">
+            <select name="source_lang">
+                {% for lang in source_langs %}
+                <option value="{{ lang }}" {% if lang == (conversation.default_source_lang or 'zh') %}selected{% endif %}>
+                    {% if lang == 'en' %}EN{% elif lang == 'zh' %}ZH{% else %}TH{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <span class="arrow-inline">→</span>
+            <select name="target_lang">
+                {% for lang in target_langs %}
+                <option value="{{ lang }}" {% if lang == (conversation.default_target_lang or 'en') %}selected{% endif %}>
+                    {% if lang == 'en' %}EN{% elif lang == 'zh' %}ZH{% else %}TH{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="detail_level" title="ความละเอียดในการแปล">
+                <option value="normal" selected>ปกติ</option>
+                <option value="short">สั้น</option>
+                <option value="detailed">ละเอียด</option>
+            </select>
+        </div>
+        <div class="input-row">
+            <textarea name="content" rows="2" placeholder="พิมพ์ข้อความที่ต้องการแปล..." required></textarea>
+            <button type="submit">แปล</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/chat.js"></script>
+{% endblock %}

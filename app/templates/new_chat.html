@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}แชทใหม่ — LLM Translate{% endblock %}
+{% block content %}
+<h1>เริ่มสนทนาแปลภาษา</h1>
+<p class="subtitle">รองรับ English, 中文, ไทย — ประวัติสนทนาแบบ public</p>
+<form method="post" action="/chat" class="lang-form">
+    <label>
+        ภาษาต้นฉบับ
+        <select name="source_lang">
+            {% for lang in source_langs %}
+            <option value="{{ lang }}" {% if lang == 'zh' %}selected{% endif %}>
+                {% if lang == 'en' %}English{% elif lang == 'zh' %}中文{% else %}ไทย{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </label>
+    <span class="arrow">→</span>
+    <label>
+        ภาษาเป้าหมาย
+        <select name="target_lang">
+            {% for lang in target_langs %}
+            <option value="{{ lang }}" {% if lang == 'en' %}selected{% endif %}>
+                {% if lang == 'en' %}English{% elif lang == 'zh' %}中文{% else %}ไทย{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit">เริ่มแชท</button>
+</form>
+{% endblock %}

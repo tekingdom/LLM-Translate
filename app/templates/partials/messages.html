@@ -1,0 +1,19 @@
+{% for msg in conversation.messages %}
+<div class="message message-{{ msg.role.value }}">
+    <div class="message-header">
+        <span class="role">{{ 'คุณ' if msg.role.value == 'user' else 'แปล' }}</span>
+        <span class="langs">{{ msg.source_lang }} → {{ msg.target_lang }}</span>
+        {% if msg.role.value == 'assistant' %}
+        <span class="stats">
+            in: {{ msg.tokens_in }} | out: {{ msg.tokens_out }}
+            {% if msg.latency_ms > 0 %}| {{ msg.latency_ms }}ms{% endif %}
+            {% if msg.tokens_per_sec_out > 0 %}| {{ msg.tokens_per_sec_out }} tok/s{% endif %}
+            {% if msg.from_cache %}<span class="badge cached">cached</span>{% endif %}
+        </span>
+        {% endif %}
+    </div>
+    <div class="message-content">{{ msg.content }}</div>
+</div>
+{% else %}
+<p class="empty">ยังไม่มีข้อความ — พิมพ์ข้อความด้านล่างเพื่อเริ่มแปล</p>
+{% endfor %}

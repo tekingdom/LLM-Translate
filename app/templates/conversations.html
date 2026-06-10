@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}ประวัติสนทนา — LLM Translate{% endblock %}
+{% block content %}
+<h1>ประวัติสนทนา (Public)</h1>
+<p class="subtitle">ทุกคนสามารถดูประวัติสนทนาทั้งหมดได้</p>
+<ul class="conversation-list" id="conversation-list">
+    {% for conv in conversations %}
+    <li class="conversation-item">
+        <a href="/chat/{{ conv.id }}">
+            <span class="conv-title">{{ conv.title or 'สนทนาใหม่' }}</span>
+            <span class="conv-meta">{{ conv.default_source_lang }} → {{ conv.default_target_lang }} · {{ conv.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </a>
+        <button
+            type="button"
+            class="btn-delete"
+            title="ลบสนทนานี้"
+            data-delete-url="/api/conversations/{{ conv.id }}"
+        >ลบ</button>
+    </li>
+    {% else %}
+    <li class="empty">ยังไม่มีสนทนา</li>
+    {% endfor %}
+</ul>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('conversation-list')?.addEventListener('click', async function (evt) {
+    const btn = evt.target.closest('.btn-delete');
+    if (!btn) return;
+
+    evt.preventDefault();
+    evt.stopPropagation();
+
+    if (!confirm('ต้องการลบสนทนานี้หรือไม่? การลบไม่สามารถย้อนกลับได้')) return;
+
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(btn.dataset.deleteUrl, { method: 'DELETE' });
+        if (!res.ok) throw new Error('delete failed');
+
+        const row = btn.closest('li');
+        row?.remove();
+
+        const list = document.getElementById('conversation-list');
+        if (list && !list.querySelector('.conversation-item')) {
+            list.innerHTML = '<li class="empty">ยังไม่มีสนทนา</li>';
+        }
+    } catch {
+        btn.disabled = false;
+        alert('ลบสนทนาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
+});
+</script>
+{% endblock %}

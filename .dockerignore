@@ -1,0 +1,11 @@
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+.git
+.gitignore
+.pytest_cache
+.mypy_cache
+.ruff_cache
+postgres_data

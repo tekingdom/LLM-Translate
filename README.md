@@ -1,0 +1,111 @@
+# LLM Translate
+
+เว็บบริการแปลภาษาแบบสนทนา (English, 中文, ไทย) ใช้ Local LLM ผ่าน OpenAI-compatible API
+
+## คุณสมบัติ
+
+- แปลภาษา en / zh / th ทุกทิศทาง
+- OpenAI-compatible API (Ollama, vLLM, LM Studio)
+- PostgreSQL schema `llm_translate`
+- Cache แปลจีนแบบ exact match
+- นับ token in/out และความเร็ว
+- System / Instruction / Persona prompts (CRUD)
+- ประวัติสนทนา public ไม่ต้อง login
+- Streaming response (SSE) สำหรับแปลแบบ real-time
+- UI แชทง่ายๆ (HTMX + SSE) + REST API
+- Docker สำหรับ web service (ฐานข้อมูลแยก)
+
+## ความต้องการ
+
+- Python 3.11+
+- PostgreSQL 16
+- Local LLM ที่รองรับ OpenAI API
+
+## ติดตั้ง
+
+```bash
+# สร้าง virtual environment
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # Linux/macOS
+
+pip install -e .
+
+# คัดลอก config
+copy .env.example .env        # Windows
+# cp .env.example .env        # Linux/macOS
+
+# รัน migration (ต่อ PostgreSQL ที่มีอยู่แล้ว)
+alembic upgrade head
+
+# เริ่มเซิร์ฟเวอร์
+uvicorn app.main:app --reload
+```
+
+เปิดเบราว์เซอร์: http://localhost:8000/chat
+
+## รันด้วย Docker (เฉพาะ Web)
+
+ฐานข้อมูล PostgreSQL ต้องพร้อมใช้งานแล้ว — ตั้ง `DATABASE_URL` ใน `.env` ให้ชี้ไปที่ DB จริง
+
+```bash
+cp .env.example .env
+# แก้ DATABASE_URL, LLM_BASE_URL ใน .env
+
+# รัน web container
+docker compose -f docker-compose.web.yml up -d --build
+
+# ดู logs
+docker compose -f docker-compose.web.yml logs -f llm_translate_web
+```
+
+**หมายเหตุ Docker:**
+- Container จะรัน `alembic upgrade head` อัตโนมัติก่อน start
+- `localhost` ใน `DATABASE_URL` จะถูกแปลงเป็น `host.docker.internal` อัตโนมัติเมื่อรันใน container
+- บน Linux อาจต้องแก้ `DATABASE_URL` เป็น IP ของ host โดยตรง
+
+**แก้ปัญหา Docker ที่พบบ่อย:**
+| Error | สาเหตุ | วิธีแก้ |
+|-------|--------|---------|
+| `exec /entrypoint.sh: no such file or directory` | ไฟล์ shell มี line ending แบบ Windows (CRLF) | แก้แล้วใน Dockerfile (`sed` + `sh /entrypoint.sh`) |
+| `relation "llm_translate.prompts" does not exist` | migration ยังไม่รันสำเร็จ หรือเชื่อม DB ผิด host | ตรวจ `DATABASE_URL` ใน `.env` ใช้ `localhost` ได้ — app จะ remap ให้ |
+| Container restart loop | เชื่อม PostgreSQL ไม่ได้จากใน container | ใช้ `host.docker.internal` แทน `localhost` |
+
+## ตัวแปร Environment
+
+| ตัวแปร | คำอธิบาย |
+|--------|----------|
+| `DATABASE_URL` | PostgreSQL async URL |
+| `DB_SCHEMA` | Schema name (default: `llm_translate`) |
+| `LLM_BASE_URL` | OpenAI-compatible endpoint |
+| `LLM_API_KEY` | API key |
+| `LLM_MODEL` | ชื่อ model |
+| `LLM_TEMPERATURE` | อุณหภูมิ (แนะนำ 0.1–0.3) |
+| `LLM_MAX_TOKENS` | Max output tokens |
+| `LLM_TIMEOUT_SEC` | Timeout วินาที |
+| `DEFAULT_SYSTEM_PROMPT` | System prompt fallback |
+| `DEFAULT_INSTRUCTION_PROMPT` | Instruction prompt fallback |
+| `DEFAULT_PERSONA_PROMPT` | Persona prompt fallback |
+
+## API Endpoints
+
+| Method | Path | หน้าที่ |
+|--------|------|---------|
+| GET | `/api/conversations` | รายการสนทนา |
+| POST | `/api/conversations` | สร้างสนทนา |
+| GET | `/api/conversations/{id}` | ดูสนทนา + messages |
+| POST | `/api/conversations/{id}/messages` | ส่งข้อความแปล (non-streaming) |
+| POST | `/api/conversations/{id}/messages/stream` | ส่งข้อความแปล (SSE streaming) |
+| GET | `/api/prompts` | ดู prompts |
+| PUT | `/api/prompts/{type}` | อัปเดต prompt |
+| GET | `/api/cache` | ดู translation cache |
+| GET | `/api/stats` | สรุป token และ cache hit rate |
+| GET | `/docs` | Swagger UI |
+
+## หน้าเว็บ
+
+| Path | หน้า |
+|------|------|
+| `/chat` | เริ่มแชทใหม่ |
+| `/chat/{id}` | หน้าแชท |
+| `/conversations` | ประวัติสนทนา public |
