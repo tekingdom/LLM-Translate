@@ -82,6 +82,24 @@ function detailLevelLabel(level) {
     return "ปกติ";
 }
 
+function scrollMessagesToBottom(messagesEl) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function scrollMessagesToBottomAfterLayout(messagesEl) {
+    const scroll = () => {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        messagesEl.lastElementChild?.scrollIntoView({ block: "end" });
+    };
+    scroll();
+    requestAnimationFrame(() => {
+        scroll();
+        requestAnimationFrame(scroll);
+    });
+    setTimeout(scroll, 0);
+    setTimeout(scroll, 100);
+}
+
 function buildUserMessage(content, sourceLang, targetLang) {
     return `
 <div class="message message-user">
@@ -187,13 +205,14 @@ function handleStreamEvent(event, state) {
         state.accumulated += event.data.delta;
         state.contentEl.innerHTML =
             escapeHtml(state.accumulated) + '<span class="cursor-blink">▌</span>';
-        state.messagesEl.scrollTop = state.messagesEl.scrollHeight;
+        scrollMessagesToBottom(state.messagesEl);
     } else if (event.type === "done") {
         state.shellEl.outerHTML = buildAssistantFinal(
             event.data.assistant_message,
             state.detailLevel,
         );
         state.finished = true;
+        scrollMessagesToBottomAfterLayout(state.messagesEl);
     } else if (event.type === "error") {
         state.shellEl.remove();
         throw new Error(event.data.detail || "Translation failed");
@@ -217,7 +236,7 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
     const streamId = `stream-${Date.now()}`;
     messagesEl.insertAdjacentHTML("beforeend", buildUserMessage(content, sourceLang, targetLang));
     messagesEl.insertAdjacentHTML("beforeend", buildPendingShell(streamId, sourceLang, targetLang, detailLevel));
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    scrollMessagesToBottom(messagesEl);
 
     const contentEl = document.getElementById(`${streamId}-content`);
     const shellEl = document.getElementById(streamId);
@@ -297,6 +316,7 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
                     },
                     detailLevel,
                 );
+                scrollMessagesToBottomAfterLayout(messagesEl);
                 return;
             }
             throw new Error("หมดเวลารอการแปล (timeout)");
@@ -322,6 +342,8 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
             detailLevel,
         );
     }
+
+    scrollMessagesToBottomAfterLayout(messagesEl);
 }
 
 function initChatForm() {
@@ -345,6 +367,7 @@ function initChatForm() {
         try {
             await streamTranslate(conversationId, content, sourceLang, targetLang, detailLevel, messagesEl);
             form.reset();
+            scrollMessagesToBottomAfterLayout(messagesEl);
         } catch (err) {
             alert("แปลไม่สำเร็จ: " + err.message);
         } finally {

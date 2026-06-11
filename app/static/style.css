@@ -35,6 +35,12 @@ body {
     flex-direction: column;
 }
 
+body:has(.container--chat) {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
 .nav {
     display: flex;
     align-items: center;
