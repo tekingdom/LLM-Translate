@@ -20,6 +20,7 @@ class MessageResponse(BaseModel):
     content: str
     source_lang: str
     target_lang: str
+    detail_level: str = "normal"
     tokens_in: int
     tokens_out: int
     latency_ms: int

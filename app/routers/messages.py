@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session, get_db
+from app.database import get_db
 from app.models.message import Message
 from app.schemas.message import MessageCreate, MessageResponse, TranslateResponse
 from app.services.translation import translate_message, translate_message_stream
@@ -47,24 +47,20 @@ async def send_message_stream(
     body: MessageCreate,
 ):
     async def event_generator():
-        async with async_session() as db:
-            try:
-                async for event in translate_message_stream(
-                    db,
-                    conversation_id,
-                    body.content,
-                    body.source_lang,
-                    body.target_lang,
-                    body.detail_level,
-                ):
-                    yield _sse_event(event["type"], event["data"])
-                await db.commit()
-            except ValueError as e:
-                await db.rollback()
-                yield _sse_event("error", {"detail": str(e)})
-            except Exception as e:
-                await db.rollback()
-                yield _sse_event("error", {"detail": str(e)})
+        yield _sse_event("started", {})
+        try:
+            async for event in translate_message_stream(
+                conversation_id,
+                body.content,
+                body.source_lang,
+                body.target_lang,
+                body.detail_level,
+            ):
+                yield _sse_event(event["type"], event["data"])
+        except ValueError as e:
+            yield _sse_event("error", {"detail": str(e)})
+        except Exception as e:
+            yield _sse_event("error", {"detail": str(e)})
 
     return StreamingResponse(
         event_generator(),

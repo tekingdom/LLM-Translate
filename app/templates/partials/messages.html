@@ -4,6 +4,7 @@
         <span class="role">{{ 'คุณ' if msg.role.value == 'user' else 'แปล' }}</span>
         <span class="langs">{{ msg.source_lang }} → {{ msg.target_lang }}</span>
         {% if msg.role.value == 'assistant' %}
+        <span class="detail-level" title="ความละเอียดในการแปล">{% if msg.detail_level == 'short' %}สั้น{% elif msg.detail_level == 'detailed' %}ละเอียด{% else %}ปกติ{% endif %}</span>
         <span class="stats">
             in: {{ msg.tokens_in }} | out: {{ msg.tokens_out }}
             {% if msg.latency_ms > 0 %}| {{ msg.latency_ms }}ms{% endif %}

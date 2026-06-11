@@ -32,6 +32,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     source_lang: Mapped[str] = mapped_column(String(2))
     target_lang: Mapped[str] = mapped_column(String(2))
+    detail_level: Mapped[str] = mapped_column(String(16), default="normal", server_default="normal")
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
