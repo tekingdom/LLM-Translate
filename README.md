@@ -12,7 +12,7 @@
 - System / Instruction / Persona prompts (CRUD)
 - ประวัติสนทนา public ไม่ต้อง login
 - Streaming response (SSE) สำหรับแปลแบบ real-time
-- UI แชทง่ายๆ (HTMX + SSE) + REST API
+- UI แชทง่ายๆ (vanilla JS + SSE) + REST API
 - Docker สำหรับ web service (ฐานข้อมูลแยก)
 
 ## ความต้องการ
@@ -87,20 +87,28 @@ docker compose -f docker-compose.web.yml logs -f llm_translate_web
 | `DEFAULT_INSTRUCTION_PROMPT` | Instruction prompt fallback |
 | `DEFAULT_PERSONA_PROMPT` | Persona prompt fallback |
 
-## API Endpoints
+ดูรายละเอียดเพิ่มเติมใน `.env.example` และ [Docs/project.md](Docs/project.md)
+
+## เอกสาร
+
+| เอกสาร | เนื้อหา |
+|--------|---------|
+| [Docs/project.md](Docs/project.md) | สถาปัตยกรรม, data flow, database, services |
+| [Docs/api.md](Docs/api.md) | REST API และ SSE streaming ครบทุก endpoint |
+| [Docs/init.sql](Docs/init.sql) | สคริปต SQL เริ่มต้นระบบใหม่ (PostgreSQL ว่าง) |
+| `/docs` | Swagger UI (interactive) |
+
+## API (ตัวอย่าง)
+
+Endpoint ที่ใช้บ่อย — ดูครบทุก endpoint ที่ [Docs/api.md](Docs/api.md)
 
 | Method | Path | หน้าที่ |
 |--------|------|---------|
-| GET | `/api/conversations` | รายการสนทนา |
 | POST | `/api/conversations` | สร้างสนทนา |
-| GET | `/api/conversations/{id}` | ดูสนทนา + messages |
-| POST | `/api/conversations/{id}/messages` | ส่งข้อความแปล (non-streaming) |
-| POST | `/api/conversations/{id}/messages/stream` | ส่งข้อความแปล (SSE streaming) |
-| GET | `/api/prompts` | ดู prompts |
-| PUT | `/api/prompts/{type}` | อัปเดต prompt |
-| GET | `/api/cache` | ดู translation cache |
+| POST | `/api/conversations/{id}/messages` | ส่งข้อความแปล |
+| POST | `/api/conversations/{id}/messages/stream` | แปลแบบ SSE streaming |
 | GET | `/api/stats` | สรุป token และ cache hit rate |
-| GET | `/docs` | Swagger UI |
+| GET | `/health/ready` | ตรวจ DB และ LLM |
 
 ## หน้าเว็บ
 
@@ -109,3 +117,13 @@ docker compose -f docker-compose.web.yml logs -f llm_translate_web
 | `/chat` | เริ่มแชทใหม่ |
 | `/chat/{id}` | หน้าแชท |
 | `/conversations` | ประวัติสนทนา public |
+
+## ข้อแนะนำ
+
+- ตั้งค่า `.env` จาก `.env.example` ก่อนรันครั้งแรก
+- ตรวจว่า Local LLM พร้อมใช้งานที่ `LLM_BASE_URL` (เช่น Ollama, vLLM, LM Studio)
+- ใช้ `GET /health/ready` ตรวจ DB และ LLM ก่อน deploy
+- อ่าน [Docs/project.md](Docs/project.md) ถ้าต้องการเข้าใจการทำงานภายใน
+- อ่าน [Docs/api.md](Docs/api.md) ถ้าจะ integrate ผ่าน REST/SSE
+
+**สงสัยอะไร ถามได้เลย** — เปิด issue หรือถามในทีม
