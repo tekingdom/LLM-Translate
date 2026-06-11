@@ -13,7 +13,7 @@
         </span>
         {% endif %}
     </div>
-    <div class="message-content">{{ msg.content }}</div>
+    <div class="message-content">{% if msg.role.value == 'assistant' %}{{ msg.content | format_translation | safe }}{% else %}{{ msg.content }}{% endif %}</div>
 </div>
 {% else %}
 <p class="empty">ยังไม่มีข้อความ — พิมพ์ข้อความด้านล่างเพื่อเริ่มแปล</p>

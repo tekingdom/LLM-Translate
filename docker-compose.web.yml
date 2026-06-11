@@ -1,11 +1,7 @@
-# ใช้ project name เดียวกับ docker-compose.yml — container อยู่ระดับเดียวกับ postgres
-# ไม่สร้าง stack ย่อยชื่อ llm-translate แยกจาก service
-name: llm_translate
-
 services:
-  llm_translate_web:
+  llm_translate:
     build: .
-    image: llm_translate_web:latest
+    image: llm_translate:latest
     container_name: llm_translate_web
     ports:
       - "${APP_PORT:-8000}:8000"
@@ -20,3 +16,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

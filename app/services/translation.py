@@ -13,7 +13,7 @@ from app.schemas.message import MessageResponse, TranslateResponse
 from app.services import cache as cache_service
 from app.services import llm as llm_service
 from app.services.prompts import get_composed_system_prompt
-from app.services.tokens import calc_tokens_per_sec, count_tokens
+from app.services.tokens import calc_tokens_per_sec, count_tokens_async
 
 DETAIL_INSTRUCTIONS: dict[str, str] = {
     "normal": "",
@@ -187,8 +187,8 @@ async def translate_message(
         cached = await cache_service.lookup(db, content, source_lang, target_lang)
         if cached:
             translated_text, _ = _trim_unbounded_output(cached.translated_text)
-            tokens_in = count_tokens(content)
-            tokens_out = count_tokens(translated_text)
+            tokens_in = await count_tokens_async(content)
+            tokens_out = await count_tokens_async(translated_text)
             from_cache = True
 
     if not from_cache:
@@ -199,7 +199,7 @@ async def translate_message(
         latency_ms = int((time.perf_counter() - start) * 1000)
         translated_text, _ = _trim_unbounded_output(llm_result.text)
         tokens_in = llm_result.tokens_in
-        tokens_out = count_tokens(translated_text)
+        tokens_out = await count_tokens_async(translated_text)
 
         if use_cache:
             await cache_service.store(db, content, source_lang, target_lang, translated_text)
@@ -240,38 +240,57 @@ async def translate_message_stream(
     tokens_out = 0
     latency_ms = 0
     from_cache = False
+    system_prompt: str | None = None
 
     use_cache = detail_level == "normal" and cache_service.involves_chinese(source_lang, target_lang)
-    if use_cache:
-        async with async_session() as db:
+    async with async_session() as db:
+        if use_cache:
             cached = await cache_service.lookup(db, content, source_lang, target_lang)
-        if cached:
-            translated_text, _ = _trim_unbounded_output(cached.translated_text)
-            tokens_in = count_tokens(content)
-            tokens_out = count_tokens(translated_text)
-            from_cache = True
-            yield {"type": "token", "data": {"delta": translated_text, "from_cache": True}}
+            if cached:
+                await db.commit()
+                translated_text, _ = _trim_unbounded_output(cached.translated_text)
+                tokens_in = await count_tokens_async(content)
+                tokens_out = await count_tokens_async(translated_text)
+                from_cache = True
+                yield {"type": "token", "data": {"delta": translated_text, "from_cache": True}}
+
+        if not from_cache:
+            system_prompt = _apply_detail_level(
+                await get_composed_system_prompt(db), detail_level
+            )
 
     if not from_cache:
-        async with async_session() as db:
-            system_prompt = _apply_detail_level(await get_composed_system_prompt(db), detail_level)
         user_content = _build_user_content(content, source_lang, target_lang)
-        tokens_in = count_tokens(system_prompt + user_content)
+        tokens_in = await count_tokens_async(system_prompt + user_content)
         start = time.perf_counter()
-        accumulated: list[str] = []
+        current_text = ""
+        sent_len = 0
 
-        async for delta in llm_service.translate_stream(system_prompt, user_content, source_lang, target_lang):
-            accumulated.append(delta)
-            current_text = "".join(accumulated)
-            trimmed_text, should_stop = _trim_unbounded_output(current_text)
+        async for delta in llm_service.translate_stream(
+            system_prompt, user_content, source_lang, target_lang
+        ):
+            current_text += delta
+            display_text, should_stop = _trim_unbounded_output(current_text)
+
+            if len(display_text) > sent_len:
+                yield {
+                    "type": "token",
+                    "data": {"delta": display_text[sent_len:], "from_cache": False},
+                }
+                sent_len = len(display_text)
+
             if should_stop:
-                accumulated = [trimmed_text]
+                current_text = display_text
                 break
-            yield {"type": "token", "data": {"delta": delta, "from_cache": False}}
 
         latency_ms = int((time.perf_counter() - start) * 1000)
-        translated_text = "".join(accumulated).strip()
-        tokens_out = count_tokens(translated_text)
+        translated_text, _ = _trim_unbounded_output(current_text.strip())
+        if len(translated_text) > sent_len:
+            yield {
+                "type": "token",
+                "data": {"delta": translated_text[sent_len:], "from_cache": False},
+            }
+        tokens_out = await count_tokens_async(translated_text)
 
         if use_cache:
             async with async_session() as db:

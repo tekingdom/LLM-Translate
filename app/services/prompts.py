@@ -12,20 +12,43 @@ DEFAULTS: dict[PromptType, str] = {
     PromptType.persona: settings.default_persona_prompt,
 }
 
+_composed_cache: str | None = None
+
+
+def invalidate_prompt_cache() -> None:
+    global _composed_cache
+    _composed_cache = None
+
+
+async def _load_prompts(db: AsyncSession) -> dict[PromptType, str]:
+    result = await db.execute(
+        select(Prompt).where(Prompt.prompt_type.in_(list(PromptType)))
+    )
+    stored = {p.prompt_type: p.content for p in result.scalars().all()}
+    return {pt: stored.get(pt, DEFAULTS[pt]) for pt in PromptType}
+
 
 async def get_prompt(db: AsyncSession, prompt_type: PromptType) -> str:
-    result = await db.execute(select(Prompt).where(Prompt.prompt_type == prompt_type))
-    prompt = result.scalar_one_or_none()
-    if prompt:
-        return prompt.content
-    return DEFAULTS[prompt_type]
+    prompts = await _load_prompts(db)
+    return prompts[prompt_type]
 
 
 async def get_composed_system_prompt(db: AsyncSession) -> str:
-    system = await get_prompt(db, PromptType.system)
-    instruction = await get_prompt(db, PromptType.instruction)
-    persona = await get_prompt(db, PromptType.persona)
-    return f"{system}\n\n{instruction}\n\n{persona}"
+    global _composed_cache
+    if _composed_cache is not None:
+        return _composed_cache
+
+    prompts = await _load_prompts(db)
+    _composed_cache = (
+        f"{prompts[PromptType.system]}\n\n"
+        f"{prompts[PromptType.instruction]}\n\n"
+        f"{prompts[PromptType.persona]}"
+    )
+    return _composed_cache
+
+
+async def warm_prompt_cache(db: AsyncSession) -> None:
+    await get_composed_system_prompt(db)
 
 
 async def seed_default_prompts(db: AsyncSession) -> None:
@@ -34,3 +57,4 @@ async def seed_default_prompts(db: AsyncSession) -> None:
         if result.scalar_one_or_none() is None:
             db.add(Prompt(prompt_type=prompt_type, content=content))
     await db.flush()
+    invalidate_prompt_cache()

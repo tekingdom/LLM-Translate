@@ -1,13 +1,16 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.config import get_settings
 from app.models.message import MessageRole
+
+settings = get_settings()
 
 
 class MessageCreate(BaseModel):
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=settings.message_max_length)
     source_lang: str = Field(pattern="^(en|zh|th)$")
     target_lang: str = Field(pattern="^(en|zh|th)$")
     detail_level: str = Field(default="normal", pattern="^(normal|short|detailed)$")
@@ -35,3 +38,17 @@ class MessageResponse(BaseModel):
 class TranslateResponse(BaseModel):
     user_message: MessageResponse
     assistant_message: MessageResponse
+
+
+def validate_message_fields(
+    content: str,
+    source_lang: str,
+    target_lang: str,
+    detail_level: str = "normal",
+) -> None:
+    MessageCreate(
+        content=content,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        detail_level=detail_level,
+    )

@@ -3,7 +3,6 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.conversation import Conversation
@@ -13,6 +12,7 @@ from app.schemas.conversation import (
     ConversationUpdate,
     ConversationWithMessages,
 )
+from app.services.conversations import load_conversation_with_recent_messages
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -43,13 +43,14 @@ async def create_conversation(body: ConversationCreate, db: AsyncSession = Depen
 
 
 @router.get("/{conversation_id}", response_model=ConversationWithMessages)
-async def get_conversation(conversation_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.id == conversation_id)
-        .options(selectinload(Conversation.messages))
+async def get_conversation(
+    conversation_id: uuid.UUID,
+    message_limit: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    conversation = await load_conversation_with_recent_messages(
+        db, conversation_id, message_limit=message_limit
     )
-    conversation = result.scalar_one_or_none()
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation

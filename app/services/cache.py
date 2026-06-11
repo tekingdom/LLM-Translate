@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.translation_cache import TranslationCache
+
+settings = get_settings()
 
 
 def involves_chinese(source_lang: str, target_lang: str) -> bool:
@@ -29,6 +32,27 @@ async def lookup(
         entry.last_used_at = datetime.now(timezone.utc)
         await db.flush()
     return entry
+
+
+async def _evict_if_needed(db: AsyncSession) -> None:
+    count_result = await db.execute(select(func.count()).select_from(TranslationCache))
+    total = count_result.scalar_one()
+    if total <= settings.cache_max_entries:
+        return
+
+    overflow = total - settings.cache_max_entries
+    batch = min(settings.cache_eviction_batch, overflow)
+    if batch <= 0:
+        return
+
+    stale_ids = await db.execute(
+        select(TranslationCache.id)
+        .order_by(TranslationCache.last_used_at.asc())
+        .limit(batch)
+    )
+    ids = list(stale_ids.scalars().all())
+    if ids:
+        await db.execute(delete(TranslationCache).where(TranslationCache.id.in_(ids)))
 
 
 async def store(
@@ -58,4 +82,5 @@ async def store(
         )
         db.add(entry)
     await db.flush()
+    await _evict_if_needed(db)
     return entry

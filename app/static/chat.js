@@ -1,7 +1,79 @@
+const OPTION_LABEL_PATTERN = /^\s*Option\s+\d+\s*:/im;
+
 function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+function findOptionMatches(text) {
+    const re = new RegExp(OPTION_LABEL_PATTERN.source, "gim");
+    return [...text.matchAll(re)];
+}
+
+function parseTranslationOptions(text) {
+    const matches = findOptionMatches(text);
+    if (!matches.length) return null;
+
+    return matches.map((match, index) => {
+        const label = match[0].trim();
+        const bodyStart = match.index + match[0].length;
+        const bodyEnd = index + 1 < matches.length ? matches[index + 1].index : text.length;
+        return { label, body: text.slice(bodyStart, bodyEnd).trim() };
+    });
+}
+
+function normalizeTranslationContent(text) {
+    const trimmed = text.trim();
+    const options = parseTranslationOptions(trimmed);
+    if (!options) return trimmed;
+
+    const matches = findOptionMatches(trimmed);
+    const preamble = trimmed.slice(0, matches[0].index).trim();
+    const blocks = options.map((option) => `${option.label}\n${option.body}`);
+    return preamble ? `${preamble}\n\n${blocks.join("\n\n")}` : blocks.join("\n\n");
+}
+
+const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="copy-icon" aria-hidden="true"><path fill-rule="evenodd" d="M7.5 3.75A3.75 3.75 0 0 1 11.25 0h7.5A3.75 3.75 0 0 1 22.5 3.75v7.5A3.75 3.75 0 0 1 18.75 15h-7.5A3.75 3.75 0 0 1 7.5 11.25v-7.5Zm6.75 0v7.5a3.75 3.75 0 0 1-3.75 3.75h-7.5A3.75 3.75 0 0 1 0 11.25v-7.5A3.75 3.75 0 0 1 3.75 0h7.5Zm-6 12.75A3.75 3.75 0 0 1 10.5 9h7.5a3.75 3.75 0 0 1 3.75 3.75v7.5A3.75 3.75 0 0 1 18.75 24h-7.5A3.75 3.75 0 0 1 7.5 20.25v-7.5Z" clip-rule="evenodd"/></svg>`;
+const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="check-icon" aria-hidden="true" hidden><path fill-rule="evenodd" d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9 13.5a.75.75 0 0 1-1.154.114l-6-6a.75.75 0 0 1 1.06-1.06l5.353 5.353 8.493-12.74a.75.75 0 0 1 1.04-.207Z" clip-rule="evenodd"/></svg>`;
+
+function buildCopyCommandSection(label, text) {
+    return (
+        '<div class="copy-command-section">' +
+        '<div class="copy-command-header">' +
+        `<span class="copy-command-label">${escapeHtml(label)}</span>` +
+        '<button type="button" class="btn-copy" title="คัดลอก" aria-label="คัดลอก">' +
+        '<span class="sr-only">คัดลอก</span>' +
+        COPY_ICON +
+        CHECK_ICON +
+        "</button>" +
+        "</div>" +
+        `<div class="copy-command-body"><code>${escapeHtml(text)}</code></div>` +
+        "</div>"
+    );
+}
+
+function formatMessageContent(text) {
+    const normalized = normalizeTranslationContent(text);
+    const options = parseTranslationOptions(normalized);
+    if (!options) {
+        return `<span class="plain-text">${escapeHtml(normalized)}</span>`;
+    }
+
+    const matches = findOptionMatches(normalized);
+    const preamble = normalized.slice(0, matches[0].index).trim();
+    const parts = [];
+
+    if (preamble) {
+        parts.push(`<div class="option-preamble">${escapeHtml(preamble)}</div>`);
+    }
+
+    parts.push('<div class="translation-options">');
+    for (const option of options) {
+        parts.push(buildCopyCommandSection(option.label, option.body));
+    }
+    parts.push("</div>");
+    return parts.join("");
 }
 
 function detailLevelLabel(level) {
@@ -58,17 +130,19 @@ function buildAssistantFinal(msg, detailLevelFallback) {
     if (msg.tokens_per_sec_out > 0) stats.push(`${msg.tokens_per_sec_out} tok/s`);
     const cached = msg.from_cache ? '<span class="badge cached">cached</span>' : "";
     const detailLevel = msg.detail_level || detailLevelFallback || "normal";
+    const content = formatMessageContent(msg.content || "");
 
-    return `
-<div class="message message-assistant">
-    <div class="message-header">
-        <span class="role">แปล</span>
-        <span class="langs">${msg.source_lang} → ${msg.target_lang}</span>
-        <span class="detail-level" title="ความละเอียดในการแปล">${detailLevelLabel(detailLevel)}</span>
-        <span class="stats">${stats.join(" | ")} ${cached}</span>
-    </div>
-    <div class="message-content">${escapeHtml(msg.content)}</div>
-</div>`;
+    return (
+        '<div class="message message-assistant">' +
+        '<div class="message-header">' +
+        '<span class="role">แปล</span>' +
+        `<span class="langs">${msg.source_lang} → ${msg.target_lang}</span>` +
+        `<span class="detail-level" title="ความละเอียดในการแปล">${detailLevelLabel(detailLevel)}</span>` +
+        `<span class="stats">${stats.join(" | ")} ${cached}</span>` +
+        "</div>" +
+        `<div class="message-content">${content}</div>` +
+        "</div>"
+    );
 }
 
 function parseSSE(buffer) {
@@ -175,13 +249,12 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
             signal: controller.signal,
         });
     } catch (err) {
+        clearTimeout(timeoutId);
         shellEl.remove();
         if (err.name === "AbortError") {
             throw new Error("หมดเวลารอการแปล (timeout)");
         }
         throw err;
-    } finally {
-        clearTimeout(timeoutId);
     }
 
     if (!response.ok) {
@@ -209,8 +282,29 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
             }
         }
     } catch (err) {
+        if (err.name === "AbortError") {
+            if (!state.finished && state.accumulated && state.shellEl.isConnected) {
+                state.shellEl.outerHTML = buildAssistantFinal(
+                    {
+                        source_lang: sourceLang,
+                        target_lang: targetLang,
+                        content: state.accumulated,
+                        tokens_in: 0,
+                        tokens_out: 0,
+                        latency_ms: 0,
+                        tokens_per_sec_out: 0,
+                        from_cache: false,
+                    },
+                    detailLevel,
+                );
+                return;
+            }
+            throw new Error("หมดเวลารอการแปล (timeout)");
+        }
         if (shellEl.isConnected) shellEl.remove();
         throw err;
+    } finally {
+        clearTimeout(timeoutId);
     }
 
     if (!state.finished && state.shellEl.isConnected) {
@@ -259,4 +353,38 @@ function initChatForm() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", initChatForm);
+function setCopyButtonState(btn, copied) {
+    const copyIcon = btn.querySelector(".copy-icon");
+    const checkIcon = btn.querySelector(".check-icon");
+    if (copyIcon) copyIcon.hidden = copied;
+    if (checkIcon) checkIcon.hidden = !copied;
+    btn.classList.toggle("copied", copied);
+}
+
+async function copyCodeBlock(btn) {
+    const code = btn.closest(".copy-command-section")?.querySelector(".copy-command-body code");
+    if (!code) return;
+
+    try {
+        await navigator.clipboard.writeText(code.textContent);
+        setCopyButtonState(btn, true);
+        setTimeout(() => setCopyButtonState(btn, false), 1500);
+    } catch (_) {
+        btn.title = "คัดลอกไม่ได้";
+        setTimeout(() => {
+            btn.title = "คัดลอก";
+        }, 1500);
+    }
+}
+
+function initCopyButtons() {
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".btn-copy");
+        if (btn) copyCodeBlock(btn);
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initCopyButtons();
+    initChatForm();
+});

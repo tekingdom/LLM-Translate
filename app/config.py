@@ -1,8 +1,13 @@
+import logging
 import os
 from functools import lru_cache
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_DATABASE_URL = "postgresql+asyncpg://llm_user:llm_pass@localhost:5432/llm_translate_db"
 
 
 def _remap_docker_database_url(url: str) -> str:
@@ -16,8 +21,11 @@ def _remap_docker_database_url(url: str) -> str:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://llm_user:llm_pass@localhost:5432/llm_translate_db"
+    database_url: str = _DEFAULT_DATABASE_URL
     db_schema: str = "llm_translate"
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle: int = 1800
 
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = "ollama"
@@ -25,10 +33,19 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_tokens: int = 1024
     llm_timeout_sec: int = 120
+    llm_max_concurrent: int = 2
+
+    cache_max_entries: int = 10_000
+    cache_eviction_batch: int = 500
+
+    message_max_length: int = 32_000
+    sse_pad_bytes: int = 512
 
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_debug: bool = False
+    app_env: str = "development"
+    log_level: str = "INFO"
 
     default_system_prompt: str = (
         "You are a professional technical translator specializing in UAV "
@@ -73,6 +90,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return _remap_docker_database_url(value)
         return value
+
+
+def warn_if_insecure_production_settings(settings: Settings) -> None:
+    if settings.app_env != "production":
+        return
+    if settings.database_url == _DEFAULT_DATABASE_URL:
+        logger.warning(
+            "APP_ENV=production but DATABASE_URL still uses default dev credentials"
+        )
 
 
 @lru_cache

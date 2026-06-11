@@ -1,18 +1,41 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.conversation import Conversation
+from app.schemas.message import validate_message_fields
+from app.services.conversations import load_conversation_with_recent_messages
+from app.services.message_format import format_translation_content
 from app.services.translation import translate_message
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["format_translation"] = format_translation_content
+
+VALID_LANGS = frozenset({"en", "zh", "th"})
+VALID_DETAIL_LEVELS = frozenset({"normal", "short", "detailed"})
+
+
+def _validate_form_fields(
+    content: str,
+    source_lang: str,
+    target_lang: str,
+    detail_level: str,
+) -> None:
+    if source_lang not in VALID_LANGS or target_lang not in VALID_LANGS:
+        raise HTTPException(status_code=422, detail="Invalid language")
+    if detail_level not in VALID_DETAIL_LEVELS:
+        raise HTTPException(status_code=422, detail="Invalid detail level")
+    try:
+        validate_message_fields(content, source_lang, target_lang, detail_level)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
 
 @router.get("/", include_in_schema=False)
@@ -35,6 +58,8 @@ async def create_chat_and_redirect(
     target_lang: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
+    if source_lang not in VALID_LANGS or target_lang not in VALID_LANGS:
+        raise HTTPException(status_code=422, detail="Invalid language")
     conversation = Conversation(
         default_source_lang=source_lang,
         default_target_lang=target_lang,
@@ -51,12 +76,7 @@ async def chat_page(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.id == conversation_id)
-        .options(selectinload(Conversation.messages))
-    )
-    conversation = result.scalar_one_or_none()
+    conversation = await load_conversation_with_recent_messages(db, conversation_id)
     if not conversation:
         return RedirectResponse(url="/chat", status_code=302)
     return templates.TemplateResponse(
@@ -80,6 +100,7 @@ async def send_chat_message(
     detail_level: str = Form(default="normal"),
     db: AsyncSession = Depends(get_db),
 ):
+    _validate_form_fields(content, source_lang, target_lang, detail_level)
     try:
         await translate_message(
             db, conversation_id, content, source_lang, target_lang, detail_level
@@ -87,12 +108,7 @@ async def send_chat_message(
     except ValueError:
         return RedirectResponse(url="/chat", status_code=303)
 
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.id == conversation_id)
-        .options(selectinload(Conversation.messages))
-    )
-    conversation = result.scalar_one_or_none()
+    conversation = await load_conversation_with_recent_messages(db, conversation_id)
     return templates.TemplateResponse(
         request,
         "partials/messages.html",

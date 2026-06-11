@@ -15,4 +15,5 @@ echo "Running database migrations..."
 python scripts/migrate.py
 
 echo "Starting LLM Translate web service..."
-exec uvicorn app.main:app --host 0.0.0.0 --port "${APP_PORT:-8000}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "${APP_PORT:-8000}" \
+  --timeout-graceful-shutdown 30

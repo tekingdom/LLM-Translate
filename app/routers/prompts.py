@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.prompt import Prompt, PromptType
 from app.schemas.prompt import PromptResponse, PromptUpdate
-from app.services.prompts import DEFAULTS
+from app.services.prompts import DEFAULTS, invalidate_prompt_cache
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -46,4 +46,5 @@ async def update_prompt(
         db.add(prompt)
     await db.flush()
     await db.refresh(prompt)
+    invalidate_prompt_cache()
     return prompt
