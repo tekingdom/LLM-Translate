@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.static_assets import static_version
 from app.models.conversation import Conversation
 from app.schemas.message import validate_message_fields
 from app.services.conversations import load_conversation_with_recent_messages
@@ -17,6 +18,7 @@ from app.services.translation import translate_message
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["format_translation"] = format_translation_content
+templates.env.globals["static_version"] = static_version
 
 VALID_LANGS = frozenset({"en", "zh", "th"})
 VALID_DETAIL_LEVELS = frozenset({"normal", "short", "detailed"})
