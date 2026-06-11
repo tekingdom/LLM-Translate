@@ -80,6 +80,13 @@ def _trim_unbounded_output(text: str) -> tuple[str, bool]:
     return _trim_repetitive_tail(text)
 
 
+LANG_NAMES: dict[str, str] = {"en": "English", "zh": "Chinese", "th": "Thai"}
+
+
+def _lang_name(lang: str) -> str:
+    return LANG_NAMES.get(lang, lang)
+
+
 def _apply_detail_level(system_prompt: str, detail_level: str) -> str:
     extra = DETAIL_INSTRUCTIONS.get(detail_level, "")
     if extra:
@@ -87,8 +94,25 @@ def _apply_detail_level(system_prompt: str, detail_level: str) -> str:
     return system_prompt
 
 
+def _apply_language_direction(system_prompt: str, source_lang: str, target_lang: str) -> str:
+    source_name = _lang_name(source_lang)
+    target_name = _lang_name(target_lang)
+    directive = (
+        f"IMPORTANT OVERRIDE — translation direction: translate from {source_name} "
+        f"to {target_name}. Both Option 1 and Option 2 must be written entirely in "
+        f"{target_name}. This overrides any earlier instruction about source or "
+        "target language."
+    )
+    return f"{system_prompt}\n\n{directive}"
+
+
+def _build_system_prompt(base_prompt: str, source_lang: str, target_lang: str, detail_level: str) -> str:
+    prompt = _apply_language_direction(base_prompt, source_lang, target_lang)
+    return _apply_detail_level(prompt, detail_level)
+
+
 def _build_user_content(content: str, source_lang: str, target_lang: str) -> str:
-    return f"Translate from {source_lang} to {target_lang}:\n{content}"
+    return f"Translate from {_lang_name(source_lang)} to {_lang_name(target_lang)}:\n{content}"
 
 
 async def _get_conversation(db: AsyncSession, conversation_id: uuid.UUID) -> Conversation | None:
@@ -192,7 +216,9 @@ async def translate_message(
             from_cache = True
 
     if not from_cache:
-        system_prompt = _apply_detail_level(await get_composed_system_prompt(db), detail_level)
+        system_prompt = _build_system_prompt(
+            await get_composed_system_prompt(db), source_lang, target_lang, detail_level
+        )
         user_content = _build_user_content(content, source_lang, target_lang)
         start = time.perf_counter()
         llm_result = await llm_service.translate(system_prompt, user_content, source_lang, target_lang)
@@ -255,8 +281,8 @@ async def translate_message_stream(
                 yield {"type": "token", "data": {"delta": translated_text, "from_cache": True}}
 
         if not from_cache:
-            system_prompt = _apply_detail_level(
-                await get_composed_system_prompt(db), detail_level
+            system_prompt = _build_system_prompt(
+                await get_composed_system_prompt(db), source_lang, target_lang, detail_level
             )
 
     if not from_cache:
