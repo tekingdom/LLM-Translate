@@ -60,12 +60,16 @@ class Settings(BaseSettings):
         "Translate each numbered item separately. "
         "Never merge numbered items. "
         "Never leave a numbered item empty. "
-        "Output order must match the source."
+        "Output order must match the source. "
+        "Put each Option label on its own line. "
+        "Never place Option 2 on the same line as Option 1."
     )
     default_instruction_prompt: str = (
-        "Use standard aviation and UAV terminology consistently "
-        "(e.g. airframe, flight controller, ground control station, gimbal, "
-        "payload, telemetry, waypoint, RTL, geofence, ESC, IMU, GNSS/RTK). "
+        "Use standard aviation and UAV terminology consistently in the target language. "
+        "Examples of domain terms in English sources include airframe, flight controller, "
+        "ground control station, gimbal, payload, telemetry, waypoint, RTL, geofence, "
+        "ESC, IMU, and GNSS/RTK — translate these into equivalent terms in the target "
+        "language while keeping acronyms as appropriate. "
         "Keep acronyms, model numbers, part numbers, units, and numeric values "
         "exactly as in the source; do not convert units. "
         "Preserve document structure: headings, lists, table layout, and "
@@ -77,9 +81,9 @@ class Settings(BaseSettings):
         "breakdowns, summaries, or transcriptions."
     )
     default_persona_prompt: str = (
-        "Write in a formal, precise, and concise technical-manual style. "
-        "Use imperative mood for procedures and instructions "
-        "(e.g. 'Check the propeller', not 'You should check the propeller'). "
+        "Write in the target language using a formal, precise, and concise "
+        "technical-manual style. "
+        "Use imperative mood for procedures and instructions. "
         "Avoid colloquial language and embellishment. "
         "Your entire reply must consist of only the 2 translation options."
     )

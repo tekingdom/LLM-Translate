@@ -23,9 +23,11 @@ def parse_translation_options(text: str) -> list[tuple[str, str]] | None:
 
     options: list[tuple[str, str]] = []
     for index, match in enumerate(matches):
-        label = match.group().strip()
-        body_start = match.end()
-        body_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        label = match.group(1).strip()
+        body_start = match.end(1)
+        body_end = (
+            matches[index + 1].start(1) if index + 1 < len(matches) else len(text)
+        )
         body = text[body_start:body_end].strip()
         options.append((label, body))
 
@@ -54,7 +56,7 @@ def format_translation_content(text: str) -> str:
         return f'<span class="plain-text">{html.escape(text)}</span>'
 
     matches = list(OPTION_LABEL_RE.finditer(text))
-    preamble = text[: matches[0].start()].strip()
+    preamble = text[: matches[0].start(1)].strip()
 
     parts: list[str] = []
     if preamble:

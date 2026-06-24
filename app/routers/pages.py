@@ -22,6 +22,7 @@ templates.env.globals["static_version"] = static_version
 
 VALID_LANGS = frozenset({"en", "zh", "th"})
 VALID_DETAIL_LEVELS = frozenset({"normal", "short", "detailed"})
+VALID_NUM_OPTIONS = frozenset({1, 2, 3})
 
 
 def _validate_form_fields(
@@ -29,13 +30,16 @@ def _validate_form_fields(
     source_lang: str,
     target_lang: str,
     detail_level: str,
+    num_options: int = 1,
 ) -> None:
     if source_lang not in VALID_LANGS or target_lang not in VALID_LANGS:
         raise HTTPException(status_code=422, detail="Invalid language")
     if detail_level not in VALID_DETAIL_LEVELS:
         raise HTTPException(status_code=422, detail="Invalid detail level")
+    if num_options not in VALID_NUM_OPTIONS:
+        raise HTTPException(status_code=422, detail="Invalid num_options")
     try:
-        validate_message_fields(content, source_lang, target_lang, detail_level)
+        validate_message_fields(content, source_lang, target_lang, detail_level, num_options)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
@@ -100,12 +104,13 @@ async def send_chat_message(
     source_lang: str = Form(...),
     target_lang: str = Form(...),
     detail_level: str = Form(default="normal"),
+    num_options: int = Form(default=1),
     db: AsyncSession = Depends(get_db),
 ):
-    _validate_form_fields(content, source_lang, target_lang, detail_level)
+    _validate_form_fields(content, source_lang, target_lang, detail_level, num_options)
     try:
         await translate_message(
-            db, conversation_id, content, source_lang, target_lang, detail_level
+            db, conversation_id, content, source_lang, target_lang, detail_level, num_options
         )
     except ValueError:
         return RedirectResponse(url="/chat", status_code=303)

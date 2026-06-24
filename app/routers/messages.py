@@ -84,6 +84,8 @@ async def send_message(
 
             body.detail_level,
 
+            body.num_options,
+
         )
 
     except ValueError as e:
@@ -121,6 +123,8 @@ async def send_message_stream(
                 body.target_lang,
 
                 body.detail_level,
+
+                body.num_options,
 
             ):
 

@@ -14,6 +14,7 @@ class MessageCreate(BaseModel):
     source_lang: str = Field(pattern="^(en|zh|th)$")
     target_lang: str = Field(pattern="^(en|zh|th)$")
     detail_level: str = Field(default="normal", pattern="^(normal|short|detailed)$")
+    num_options: int = Field(default=1, ge=1, le=3)
 
 
 class MessageResponse(BaseModel):
@@ -45,10 +46,12 @@ def validate_message_fields(
     source_lang: str,
     target_lang: str,
     detail_level: str = "normal",
+    num_options: int = 1,
 ) -> None:
     MessageCreate(
         content=content,
         source_lang=source_lang,
         target_lang=target_lang,
         detail_level=detail_level,
+        num_options=num_options,
     )

@@ -35,18 +35,22 @@ DETAIL_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
-OPTION_LABEL_RE = re.compile(r"(?im)^\s*Option\s+\d+\s*:")
+OPTION_LABEL_RE = re.compile(r"(?im)(?:^|\s)(Option\s+\d+\s*:)")
 REPETITION_MIN_UNIT_CHARS = 8
 REPETITION_MAX_UNIT_CHARS = 240
 REPETITION_MIN_REPEATS = 3
 
 
-def _trim_extra_options(text: str) -> tuple[str, bool]:
+def _trim_extra_options(text: str, max_options: int = 2) -> tuple[str, bool]:
     option_labels = list(OPTION_LABEL_RE.finditer(text))
-    if len(option_labels) <= 2:
+    if max_options == 1:
+        if not option_labels:
+            return text, False
+        return text[: option_labels[0].start(1)].rstrip(), True
+    if len(option_labels) <= max_options:
         return text, False
 
-    return text[: option_labels[2].start()].rstrip(), True
+    return text[: option_labels[max_options].start(1)].rstrip(), True
 
 
 def _trim_repetitive_tail(text: str) -> tuple[str, bool]:
@@ -72,19 +76,85 @@ def _trim_repetitive_tail(text: str) -> tuple[str, bool]:
     return text, False
 
 
-def _trim_unbounded_output(text: str) -> tuple[str, bool]:
-    trimmed, was_trimmed = _trim_extra_options(text)
+def _trim_unbounded_output(text: str, max_options: int = 2) -> tuple[str, bool]:
+    trimmed, was_trimmed = _trim_extra_options(text, max_options)
     if was_trimmed:
         return trimmed, True
+
+    option_count = len(list(OPTION_LABEL_RE.finditer(text)))
+    if max_options > 1 and option_count < max_options:
+        return text, False
 
     return _trim_repetitive_tail(text)
 
 
-LANG_NAMES: dict[str, str] = {"en": "English", "zh": "Chinese", "th": "Thai"}
+LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "zh": "中文 (Chinese)",
+    "th": "ภาษาไทย (Thai)",
+}
 
 
 def _lang_name(lang: str) -> str:
     return LANG_NAMES.get(lang, lang)
+
+
+TARGET_LANG_EXTRA: dict[str, str] = {
+    "th": (
+        "All translation options MUST use Thai script (อักษรไทย). "
+        "Do NOT output English or romanization."
+    ),
+}
+
+
+_FIXED_OPTION_COUNT_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"exactly 2 variants", re.IGNORECASE), "translation variants"),
+    (re.compile(r"'Option 1:' and 'Option 2:'", re.IGNORECASE), "labeled translation variants"),
+    (re.compile(r"only the 2 translation options", re.IGNORECASE), "only the translation options"),
+    (re.compile(r"the 2 translation options only", re.IGNORECASE), "the translation options only"),
+    (re.compile(r"the 2 translation options", re.IGNORECASE), "the translation options"),
+    (re.compile(r"Never place Option 2 on the same line as Option 1\.", re.IGNORECASE), ""),
+)
+
+
+def _neutralize_fixed_option_count(prompt: str) -> str:
+    result = prompt
+    for pattern, replacement in _FIXED_OPTION_COUNT_REPLACEMENTS:
+        result = pattern.sub(replacement, result)
+    return result
+
+
+def _option_labels_range(num_options: int) -> str:
+    if num_options <= 1:
+        return ""
+    if num_options == 2:
+        return "Option 1 and Option 2"
+    return f"Option 1 through Option {num_options}"
+
+
+def _apply_num_options(system_prompt: str, num_options: int) -> str:
+    if num_options == 1:
+        directive = (
+            "IMPORTANT OVERRIDE — output format: SINGLE translation. "
+            "Output ONLY the translated text with no variants, no labels, "
+            "and no 'Option N:' prefixes. Nothing else."
+        )
+    elif num_options == 2:
+        directive = (
+            "IMPORTANT OVERRIDE — output format: exactly 2 variants labeled "
+            "'Option 1:' and 'Option 2:'. Put each Option label on its own line. "
+            "Output ONLY these 2 translation options; no analysis or commentary."
+        )
+    else:
+        directive = (
+            "CRITICAL FINAL OVERRIDE — ignore every earlier instruction that limits "
+            "output to 2 options, 2 variants, or only Option 1 and Option 2. "
+            "Output format: exactly 3 variants labeled 'Option 1:', 'Option 2:', "
+            "and 'Option 3:'. You MUST include all three options. Put each Option "
+            "label on its own line. Output ONLY these 3 translation options; "
+            "no analysis or commentary."
+        )
+    return f"{system_prompt}\n\n{directive}"
 
 
 def _apply_detail_level(system_prompt: str, detail_level: str) -> str:
@@ -94,24 +164,52 @@ def _apply_detail_level(system_prompt: str, detail_level: str) -> str:
     return system_prompt
 
 
-def _apply_language_direction(system_prompt: str, source_lang: str, target_lang: str) -> str:
+def _apply_language_direction(
+    system_prompt: str, source_lang: str, target_lang: str, num_options: int
+) -> str:
     source_name = _lang_name(source_lang)
     target_name = _lang_name(target_lang)
+    if num_options <= 1:
+        lang_clause = f"The translation must be written entirely in {target_name}."
+    else:
+        options_ref = _option_labels_range(num_options)
+        lang_clause = (
+            f"{options_ref} must be written entirely in {target_name}."
+        )
     directive = (
         f"IMPORTANT OVERRIDE — translation direction: translate from {source_name} "
-        f"to {target_name}. Both Option 1 and Option 2 must be written entirely in "
-        f"{target_name}. This overrides any earlier instruction about source or "
-        "target language."
+        f"to {target_name}. {lang_clause} This overrides any earlier instruction "
+        "about source or target language."
     )
+    extra = TARGET_LANG_EXTRA.get(target_lang, "")
+    if extra and num_options > 1:
+        directive = f"{directive} {extra}"
+    elif extra and num_options <= 1:
+        directive = (
+            f"{directive} The translation MUST use Thai script (อักษรไทย). "
+            "Do NOT output English or romanization."
+        )
     return f"{system_prompt}\n\n{directive}"
 
 
-def _build_system_prompt(base_prompt: str, source_lang: str, target_lang: str, detail_level: str) -> str:
-    prompt = _apply_language_direction(base_prompt, source_lang, target_lang)
-    return _apply_detail_level(prompt, detail_level)
+def _build_system_prompt(
+    base_prompt: str,
+    source_lang: str,
+    target_lang: str,
+    detail_level: str,
+    num_options: int,
+) -> str:
+    prompt = base_prompt
+    if num_options != 2:
+        prompt = _neutralize_fixed_option_count(prompt)
+    prompt = _apply_language_direction(prompt, source_lang, target_lang, num_options)
+    prompt = _apply_detail_level(prompt, detail_level)
+    return _apply_num_options(prompt, num_options)
 
 
 def _build_user_content(content: str, source_lang: str, target_lang: str) -> str:
+    if target_lang == "th":
+        return f"แปลจาก{_lang_name(source_lang)}เป็นภาษาไทย:\n{content}"
     return f"Translate from {_lang_name(source_lang)} to {_lang_name(target_lang)}:\n{content}"
 
 
@@ -191,6 +289,7 @@ async def translate_message(
     source_lang: str,
     target_lang: str,
     detail_level: str = "normal",
+    num_options: int = 1,
 ) -> TranslateResponse:
     conversation = await _get_conversation(db, conversation_id)
     if not conversation:
@@ -206,24 +305,32 @@ async def translate_message(
     latency_ms = 0
     from_cache = False
 
-    use_cache = detail_level == "normal" and cache_service.involves_chinese(source_lang, target_lang)
+    use_cache = (
+        detail_level == "normal"
+        and num_options == 2
+        and cache_service.involves_chinese(source_lang, target_lang)
+    )
     if use_cache:
         cached = await cache_service.lookup(db, content, source_lang, target_lang)
         if cached:
-            translated_text, _ = _trim_unbounded_output(cached.translated_text)
+            translated_text, _ = _trim_unbounded_output(cached.translated_text, num_options)
             tokens_in = await count_tokens_async(content)
             tokens_out = await count_tokens_async(translated_text)
             from_cache = True
 
     if not from_cache:
         system_prompt = _build_system_prompt(
-            await get_composed_system_prompt(db), source_lang, target_lang, detail_level
+            await get_composed_system_prompt(db),
+            source_lang,
+            target_lang,
+            detail_level,
+            num_options,
         )
         user_content = _build_user_content(content, source_lang, target_lang)
         start = time.perf_counter()
         llm_result = await llm_service.translate(system_prompt, user_content, source_lang, target_lang)
         latency_ms = int((time.perf_counter() - start) * 1000)
-        translated_text, _ = _trim_unbounded_output(llm_result.text)
+        translated_text, _ = _trim_unbounded_output(llm_result.text, num_options)
         tokens_in = llm_result.tokens_in
         tokens_out = await count_tokens_async(translated_text)
 
@@ -246,6 +353,7 @@ async def translate_message_stream(
     source_lang: str,
     target_lang: str,
     detail_level: str = "normal",
+    num_options: int = 1,
 ) -> AsyncIterator[dict[str, Any]]:
     async with async_session() as db:
         conversation = await _get_conversation(db, conversation_id)
@@ -268,13 +376,17 @@ async def translate_message_stream(
     from_cache = False
     system_prompt: str | None = None
 
-    use_cache = detail_level == "normal" and cache_service.involves_chinese(source_lang, target_lang)
+    use_cache = (
+        detail_level == "normal"
+        and num_options == 2
+        and cache_service.involves_chinese(source_lang, target_lang)
+    )
     async with async_session() as db:
         if use_cache:
             cached = await cache_service.lookup(db, content, source_lang, target_lang)
             if cached:
                 await db.commit()
-                translated_text, _ = _trim_unbounded_output(cached.translated_text)
+                translated_text, _ = _trim_unbounded_output(cached.translated_text, num_options)
                 tokens_in = await count_tokens_async(content)
                 tokens_out = await count_tokens_async(translated_text)
                 from_cache = True
@@ -282,7 +394,11 @@ async def translate_message_stream(
 
         if not from_cache:
             system_prompt = _build_system_prompt(
-                await get_composed_system_prompt(db), source_lang, target_lang, detail_level
+                await get_composed_system_prompt(db),
+                source_lang,
+                target_lang,
+                detail_level,
+                num_options,
             )
 
     if not from_cache:
@@ -296,7 +412,7 @@ async def translate_message_stream(
             system_prompt, user_content, source_lang, target_lang
         ):
             current_text += delta
-            display_text, should_stop = _trim_unbounded_output(current_text)
+            display_text, should_stop = _trim_unbounded_output(current_text, num_options)
 
             if len(display_text) > sent_len:
                 yield {
@@ -310,7 +426,7 @@ async def translate_message_stream(
                 break
 
         latency_ms = int((time.perf_counter() - start) * 1000)
-        translated_text, _ = _trim_unbounded_output(current_text.strip())
+        translated_text, _ = _trim_unbounded_output(current_text.strip(), num_options)
         if len(translated_text) > sent_len:
             yield {
                 "type": "token",

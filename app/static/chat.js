@@ -1,4 +1,4 @@
-const OPTION_LABEL_PATTERN = /^\s*Option\s+\d+\s*:/im;
+const OPTION_LABEL_PATTERN = /(?:^|\s)(Option\s+\d+\s*:)/gim;
 
 function escapeHtml(text) {
     const div = document.createElement("div");
@@ -7,8 +7,15 @@ function escapeHtml(text) {
 }
 
 function findOptionMatches(text) {
-    const re = new RegExp(OPTION_LABEL_PATTERN.source, "gim");
-    return [...text.matchAll(re)];
+    return [...text.matchAll(OPTION_LABEL_PATTERN)];
+}
+
+function optionLabelStart(match) {
+    return match.index + match[0].length - match[1].length;
+}
+
+function optionLabelEnd(match) {
+    return match.index + match[0].length;
 }
 
 function parseTranslationOptions(text) {
@@ -16,9 +23,12 @@ function parseTranslationOptions(text) {
     if (!matches.length) return null;
 
     return matches.map((match, index) => {
-        const label = match[0].trim();
-        const bodyStart = match.index + match[0].length;
-        const bodyEnd = index + 1 < matches.length ? matches[index + 1].index : text.length;
+        const label = match[1].trim();
+        const bodyStart = optionLabelEnd(match);
+        const bodyEnd =
+            index + 1 < matches.length
+                ? optionLabelStart(matches[index + 1])
+                : text.length;
         return { label, body: text.slice(bodyStart, bodyEnd).trim() };
     });
 }
@@ -29,7 +39,7 @@ function normalizeTranslationContent(text) {
     if (!options) return trimmed;
 
     const matches = findOptionMatches(trimmed);
-    const preamble = trimmed.slice(0, matches[0].index).trim();
+    const preamble = trimmed.slice(0, optionLabelStart(matches[0])).trim();
     const blocks = options.map((option) => `${option.label}\n${option.body}`);
     return preamble ? `${preamble}\n\n${blocks.join("\n\n")}` : blocks.join("\n\n");
 }
@@ -61,7 +71,7 @@ function formatMessageContent(text) {
     }
 
     const matches = findOptionMatches(normalized);
-    const preamble = normalized.slice(0, matches[0].index).trim();
+    const preamble = normalized.slice(0, optionLabelStart(matches[0])).trim();
     const parts = [];
 
     if (preamble) {
@@ -204,7 +214,7 @@ function handleStreamEvent(event, state) {
         activateStreamingShell(state);
         state.accumulated += event.data.delta;
         state.contentEl.innerHTML =
-            escapeHtml(state.accumulated) + '<span class="cursor-blink">▌</span>';
+            formatMessageContent(state.accumulated) + '<span class="cursor-blink">▌</span>';
         scrollMessagesToBottom(state.messagesEl);
     } else if (event.type === "done") {
         state.shellEl.outerHTML = buildAssistantFinal(
@@ -229,7 +239,7 @@ function processSSEBuffer(buffer, state) {
 
 const STREAM_TIMEOUT_MS = 130_000;
 
-async function streamTranslate(conversationId, content, sourceLang, targetLang, detailLevel, messagesEl) {
+async function streamTranslate(conversationId, content, sourceLang, targetLang, detailLevel, numOptions, messagesEl) {
     const empty = messagesEl.querySelector(".empty");
     if (empty) empty.remove();
 
@@ -264,6 +274,7 @@ async function streamTranslate(conversationId, content, sourceLang, targetLang, 
                 source_lang: sourceLang,
                 target_lang: targetLang,
                 detail_level: detailLevel,
+                num_options: numOptions,
             }),
             signal: controller.signal,
         });
@@ -362,11 +373,12 @@ function initChatForm() {
         const sourceLang = form.source_lang.value;
         const targetLang = form.target_lang.value;
         const detailLevel = form.detail_level.value;
+        const numOptions = parseInt(form.num_options.value, 10);
 
         submitBtn.disabled = true;
         try {
-            await streamTranslate(conversationId, content, sourceLang, targetLang, detailLevel, messagesEl);
-            form.reset();
+            await streamTranslate(conversationId, content, sourceLang, targetLang, detailLevel, numOptions, messagesEl);
+            form.content.value = "";
             scrollMessagesToBottomAfterLayout(messagesEl);
         } catch (err) {
             alert("แปลไม่สำเร็จ: " + err.message);
